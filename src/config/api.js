@@ -11,11 +11,11 @@ const SUPABASE_KEY =
   ''
 
 const IS_SUPABASE =
-  BASE_URL.includes('supabase.co') || Boolean(SUPABASE_KEY)
+  Boolean(BASE_URL) && (BASE_URL.includes('supabase.co') || Boolean(SUPABASE_KEY))
 
 if (!BASE_URL) {
-  console.warn(
-    '[api] VITE_API_BASE_URL is not set. API requests will use relative paths.',
+  console.info(
+    '[api] VITE_API_BASE_URL is not set. Bore & Barrel will operate in offline/local storage mode.',
   )
 }
 

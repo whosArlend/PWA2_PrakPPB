@@ -1,77 +1,94 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import reviewService from '../services/reviewService'
+import { getUserIdentifier } from '../services/userService'
 
 // ---------------------------------------------------------------------------
-// useReviews — fetch reviews for a specific product.
+// useReviews — query caching for product reviews (FEATURE 4 & FEATURE 8)
 // ---------------------------------------------------------------------------
-
 export function useReviews(gunId) {
-  const [reviews, setReviews] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-
-  const fetchReviews = useCallback(async () => {
-    if (!gunId) {
-      setLoading(false)
-      return
-    }
-    try {
-      setLoading(true)
-      setError(null)
-
+  const query = useQuery({
+    queryKey: ['reviews', String(gunId)],
+    queryFn: async () => {
+      if (!gunId) return []
       const response = await reviewService.getReviews(gunId)
+      if (!response.success) throw new Error(response.message || 'Failed to fetch reviews')
+      return response.data || []
+    },
+    enabled: Boolean(gunId),
+  })
 
-      if (response.success) {
-        setReviews(response.data || [])
-      } else {
-        setError(response.message || 'Failed to fetch reviews.')
-      }
-    } catch (err) {
-      setError(err.message || 'An error occurred while fetching reviews.')
-      setReviews([])
-    } finally {
-      setLoading(false)
-    }
-  }, [gunId])
-
-  useEffect(() => {
-    fetchReviews()
-  }, [fetchReviews])
-
-  return { reviews, loading, error, refetch: fetchReviews }
+  return {
+    reviews: query.data || [],
+    loading: query.isLoading,
+    isFetching: query.isFetching,
+    error: query.error?.message || null,
+    refetch: query.refetch,
+  }
 }
 
 // ---------------------------------------------------------------------------
-// useCreateReview — submit a new review for a product.
+// useCreateReview — mutation to create review with cache invalidation
 // ---------------------------------------------------------------------------
-
 export function useCreateReview() {
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
-  const [success, setSuccess] = useState(false)
+  const queryClient = useQueryClient()
+
+  const mutation = useMutation({
+    mutationFn: ({ gunId, reviewData }) => reviewService.createReview(gunId, reviewData),
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['reviews', String(vars.gunId)] })
+    },
+  })
 
   const createReview = async (gunId, reviewData) => {
     try {
-      setLoading(true)
-      setError(null)
-      setSuccess(false)
-
-      const response = await reviewService.createReview(gunId, reviewData)
-
-      if (response.success) {
-        setSuccess(true)
-        return response.data
-      } else {
-        setError(response.message || 'Failed to submit review.')
-        return null
-      }
-    } catch (err) {
-      setError(err.message || 'An error occurred while submitting review.')
+      const res = await mutation.mutateAsync({ gunId, reviewData })
+      return res.data
+    } catch {
       return null
-    } finally {
-      setLoading(false)
     }
   }
 
-  return { createReview, loading, error, success }
+  return {
+    createReview,
+    loading: mutation.isPending,
+    error: mutation.error?.message || null,
+    success: mutation.isSuccess,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// useReviewMutations — full CRUD & Thumbs Up/Down (FEATURE 8)
+// ---------------------------------------------------------------------------
+export function useReviewMutations(gunId) {
+  const queryClient = useQueryClient()
+  const currentUserId = getUserIdentifier()
+
+  const invalidate = () => {
+    if (gunId) {
+      queryClient.invalidateQueries({ queryKey: ['reviews', String(gunId)] })
+    }
+  }
+
+  const updateMutation = useMutation({
+    mutationFn: ({ reviewId, data }) => reviewService.updateReview(reviewId, data),
+    onSuccess: () => invalidate(),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (reviewId) => reviewService.deleteReview(reviewId),
+    onSuccess: () => invalidate(),
+  })
+
+  const voteMutation = useMutation({
+    mutationFn: ({ reviewId, voteType }) => reviewService.voteReview(reviewId, voteType),
+    onSuccess: () => invalidate(),
+  })
+
+  return {
+    updateReview: updateMutation.mutateAsync,
+    deleteReview: deleteMutation.mutateAsync,
+    voteReview: voteMutation.mutateAsync,
+    currentUserId,
+    isMutating: updateMutation.isPending || deleteMutation.isPending || voteMutation.isPending,
+  }
 }

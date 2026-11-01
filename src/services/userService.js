@@ -1,8 +1,9 @@
 // ---------------------------------------------------------------------------
-// User identity — generates and persists a unique client identifier in
-// localStorage so the Favorites and Reviews APIs can associate data with
-// this browser session.  No authentication is involved.
+// userService.js — User identity & Armory Operator profile management (FEATURE 6)
+// Supports Supabase profiles table synchronization and persistent localStorage.
 // ---------------------------------------------------------------------------
+
+import { apiClient, IS_SUPABASE } from '../config/api'
 
 const USER_IDENTIFIER_KEY = 'bore_barrel_user_id'
 const USER_PROFILE_KEY = 'bore_barrel_user_profile'
@@ -31,7 +32,6 @@ const generateUUID = () => {
 /**
  * Return a stable, randomly-generated user identifier (UUID).
  * Compatible with Supabase PostgreSQL UUID foreign keys.
- * Creates one on first call and stores it in localStorage.
  */
 export const getUserIdentifier = () => {
   try {
@@ -42,93 +42,124 @@ export const getUserIdentifier = () => {
     }
     return userId
   } catch {
-    // Private / incognito mode may throw — return a transient UUID.
     return generateUUID()
   }
 }
 
 /**
- * Return the user profile object stored in localStorage, or a sensible
- * default.  The profile is purely cosmetic (username for reviews, etc.).
+ * Default fallback profile
+ */
+const getDefaultProfile = (userId) => ({
+  userId: userId || getUserIdentifier(),
+  username: 'Operator Delta',
+  bio: 'Lead armorer and certified weapons technician. Specializes in striker-fired sidearms and tactical carbine platforms.',
+  avatar: null,
+  contact_email: 'armory@boreandbarrel.com',
+  contact_phone: '(555) 010-0100',
+  station_address: '123 Range Road, Armory District',
+  operating_hours: 'Tuesday to Saturday, 10:00 AM – 6:00 PM',
+})
+
+/**
+ * Return the user profile object stored in localStorage or default
  */
 export const getUserProfile = () => {
+  const userId = getUserIdentifier()
   try {
     const raw = localStorage.getItem(USER_PROFILE_KEY)
-    if (raw) return JSON.parse(raw)
-  } catch {
-    /* corrupted data — fall through to default */
-  }
-  return {
-    username: 'Shooter',
-    avatar: null,
-    bio: '',
-    userId: getUserIdentifier(),
-  }
-}
-
-/**
- * Persist an updated profile object.
- */
-export const saveUserProfile = (profile) => {
-  try {
-    const data = {
-      ...profile,
-      userId: getUserIdentifier(),
-      updatedAt: new Date().toISOString(),
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      return {
+        ...getDefaultProfile(userId),
+        ...parsed,
+        userId,
+      }
     }
-    localStorage.setItem(USER_PROFILE_KEY, JSON.stringify(data))
-    return { success: true, data }
-  } catch (err) {
-    return { success: false, message: err.message }
-  }
-}
-
-/**
- * Update username
- */
-export const updateUsername = (username) => {
-  const profile = getUserProfile()
-  profile.username = username.trim() || 'Shooter'
-  return saveUserProfile(profile)
-}
-
-/**
- * Update bio
- */
-export const updateBio = (bio) => {
-  const profile = getUserProfile()
-  profile.bio = bio.trim()
-  return saveUserProfile(profile)
-}
-
-/**
- * Update avatar
- */
-export const updateAvatar = (avatarBase64) => {
-  const profile = getUserProfile()
-  profile.avatar = avatarBase64
-  return saveUserProfile(profile)
-}
-
-/**
- * Reset identifier (generates a new anonymous identifier)
- */
-export const resetUserIdentifier = () => {
-  try {
-    localStorage.removeItem(USER_IDENTIFIER_KEY)
-    localStorage.removeItem(USER_PROFILE_KEY)
-    return getUserIdentifier()
   } catch {
-    return `anon_${Date.now()}`
+    /* corrupted data — fallback */
   }
+  return getDefaultProfile(userId)
+}
+
+/**
+ * Fetch profile from Supabase with local fallback
+ */
+export const fetchRemoteProfile = async () => {
+  const userId = getUserIdentifier()
+  const localProfile = getUserProfile()
+
+  if (IS_SUPABASE) {
+    try {
+      const data = await apiClient.get(`/rest/v1/profiles?user_id=eq.${userId}&select=*`)
+      if (Array.isArray(data) && data.length > 0) {
+        const remote = data[0]
+        const merged = {
+          ...localProfile,
+          username: remote.username || localProfile.username,
+          bio: remote.bio || localProfile.bio,
+          avatar: remote.avatar || localProfile.avatar,
+          contact_email: remote.contact_email || localProfile.contact_email,
+          contact_phone: remote.contact_phone || localProfile.contact_phone,
+        }
+        localStorage.setItem(USER_PROFILE_KEY, JSON.stringify(merged))
+        return merged
+      }
+    } catch {
+      // Supabase unavailable — continue with local
+    }
+  }
+  return localProfile
+}
+
+/**
+ * Persist an updated profile object (to Supabase & localStorage)
+ */
+export const saveUserProfile = async (profile) => {
+  const userId = getUserIdentifier()
+  const data = {
+    ...getUserProfile(),
+    ...profile,
+    userId,
+    updatedAt: new Date().toISOString(),
+  }
+
+  // 1. Always save locally first
+  try {
+    localStorage.setItem(USER_PROFILE_KEY, JSON.stringify(data))
+    window.dispatchEvent(new Event('profile-updated'))
+  } catch (err) {
+    console.warn('LocalStorage save error:', err)
+  }
+
+  // 2. Sync to Supabase if configured
+  if (IS_SUPABASE) {
+    try {
+      const payload = {
+        user_id: userId,
+        username: data.username,
+        bio: data.bio,
+        avatar: data.avatar,
+        contact_email: data.contact_email,
+        contact_phone: data.contact_phone,
+        updated_at: new Date().toISOString(),
+      }
+
+      await apiClient.post('/rest/v1/profiles', payload, {
+        headers: {
+          Prefer: 'resolution=merge-duplicates,return=representation',
+        },
+      })
+    } catch (err) {
+      console.warn('Supabase profile sync failed (continuing with local persistence):', err)
+    }
+  }
+
+  return { success: true, data }
 }
 
 export default {
   getUserIdentifier,
   getUserProfile,
+  fetchRemoteProfile,
   saveUserProfile,
-  updateUsername,
-  updateBio,
-  updateAvatar,
-  resetUserIdentifier,
 }

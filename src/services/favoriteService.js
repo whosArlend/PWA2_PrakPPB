@@ -1,14 +1,26 @@
 import { apiClient, IS_SUPABASE } from '../config/api'
 import { normalizeProduct } from './gunService'
+import gunService from './gunService'
 
-// ---------------------------------------------------------------------------
-// FavoriteService — server-side favourites.
-// Supports both Supabase (public.favorites with products foreign key join)
-// and university API (/api/v1/favorites).
-//
-// NOTE: When server/RLS is offline or restricted, useFavorites hook falls back
-// to localStorage automatically so favorites always work.
-// ---------------------------------------------------------------------------
+const LOCAL_KEY = 'bore_barrel_favorites'
+
+const readLocalFavs = () => {
+  try {
+    const raw = localStorage.getItem(LOCAL_KEY)
+    return raw ? JSON.parse(raw) : []
+  } catch {
+    return []
+  }
+}
+
+const writeLocalFavs = (ids) => {
+  try {
+    localStorage.setItem(LOCAL_KEY, JSON.stringify(ids))
+    window.dispatchEvent(new Event('favorites-updated'))
+  } catch {
+    /* quota */
+  }
+}
 
 class FavoriteService {
   /**
@@ -16,62 +28,93 @@ class FavoriteService {
    */
   async getFavorites(userIdentifier) {
     if (IS_SUPABASE) {
-      const data = await apiClient.get(
-        `/rest/v1/favorites?user_id=eq.${userIdentifier}&select=product_id,created_at,products(*)`,
-      )
-      const list = Array.isArray(data)
-        ? data.map((fav) => {
-            const prod = fav.products ? normalizeProduct(fav.products) : null
-            return {
-              ...(prod || {}),
+      try {
+        const data = await apiClient.get(
+          `/rest/v1/favorites?user_id=eq.${userIdentifier}&select=product_id,created_at,products(*)`,
+        )
+        if (Array.isArray(data)) {
+          const list = data
+            .filter((fav) => Boolean(fav.products))
+            .map((fav) => ({
+              ...normalizeProduct(fav.products),
               id: fav.product_id,
-              recipe_id: fav.product_id,
-              product_id: fav.product_id,
               created_at: fav.created_at,
-            }
-          })
-        : []
-
-      return { success: true, data: list }
-    }
-
-    return apiClient.get('/api/v1/favorites', {
-      params: { user_identifier: userIdentifier },
-    })
-  }
-
-  /**
-   * Toggle a product's favourite state (add ↔ remove).
-   * @param {Object} data  { recipe_id, user_identifier }
-   */
-  async toggleFavorite(data) {
-    if (IS_SUPABASE) {
-      const targetId = Number(data.recipe_id || data.gun_id)
-      const userId = data.user_identifier
-
-      // Check if already favorited
-      const existing = await apiClient.get(
-        `/rest/v1/favorites?product_id=eq.${targetId}&user_id=eq.${userId}&select=*`,
-      )
-
-      if (Array.isArray(existing) && existing.length > 0) {
-        // Remove from favorites
-        await apiClient.delete(
-          `/rest/v1/favorites?product_id=eq.${targetId}&user_id=eq.${userId}`,
-        )
-        return { success: true, data: { is_favorited: false } }
-      } else {
-        // Add to favorites
-        await apiClient.post(
-          '/rest/v1/favorites',
-          { product_id: targetId, user_id: userId },
-          { headers: { Prefer: 'return=minimal' } },
-        )
-        return { success: true, data: { is_favorited: true } }
+            }))
+          return { success: true, data: list }
+        }
+      } catch (err) {
+        console.warn('Supabase getFavorites error, reading local:', err)
       }
     }
 
-    return apiClient.post('/api/v1/favorites/toggle', data)
+    // Local fallback: map favorite ids to full product records
+    const ids = readLocalFavs()
+    const { data: allProducts } = await gunService.getGuns({ status: 'all', limit: 200 })
+    const list = ids
+      .map((id) => allProducts.find((p) => String(p.id) === String(id)))
+      .filter(Boolean)
+
+    return { success: true, data: list }
+  }
+
+  /**
+   * Toggle a product's favourite state.
+   */
+  async toggleFavorite(data) {
+    const targetId = String(data.recipe_id || data.gun_id || data.product_id)
+    const userId = data.user_identifier
+
+    if (IS_SUPABASE) {
+      try {
+        const existing = await apiClient.get(
+          `/rest/v1/favorites?product_id=eq.${targetId}&user_id=eq.${userId}&select=*`,
+        )
+
+        if (Array.isArray(existing) && existing.length > 0) {
+          await apiClient.delete(
+            `/rest/v1/favorites?product_id=eq.${targetId}&user_id=eq.${userId}`,
+          )
+          this.syncLocalToggle(targetId, false)
+          return { success: true, data: { is_favorited: false } }
+        } else {
+          await apiClient.post(
+            '/rest/v1/favorites',
+            { product_id: Number(targetId) || targetId, user_id: userId },
+            { headers: { Prefer: 'return=minimal' } },
+          )
+          this.syncLocalToggle(targetId, true)
+          return { success: true, data: { is_favorited: true } }
+        }
+      } catch (err) {
+        console.warn('Supabase toggleFavorite error, updating local:', err)
+      }
+    }
+
+    const isFav = this.syncLocalToggle(targetId)
+    return { success: true, data: { is_favorited: isFav } }
+  }
+
+  syncLocalToggle(targetId, forceState) {
+    const current = readLocalFavs()
+    const idx = current.findIndex((id) => String(id) === String(targetId))
+    let newState
+
+    if (forceState !== undefined) {
+      newState = forceState
+      if (newState && idx === -1) current.push(targetId)
+      if (!newState && idx > -1) current.splice(idx, 1)
+    } else {
+      if (idx === -1) {
+        current.push(targetId)
+        newState = true
+      } else {
+        current.splice(idx, 1)
+        newState = false
+      }
+    }
+
+    writeLocalFavs(current)
+    return newState
   }
 }
 

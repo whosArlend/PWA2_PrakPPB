@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft,
-  Upload,
   X,
   Plus,
   Loader,
@@ -10,7 +10,7 @@ import {
   AlertCircle,
 } from 'lucide-react'
 import gunService from '../services/gunService'
-import uploadService from '../services/uploadService'
+import MultiImageUploader from '../components/common/MultiImageUploader'
 import {
   saveDraft,
   loadDraft,
@@ -22,11 +22,15 @@ import {
 import ConfirmModal from '../components/modals/ConfirmModal'
 
 /**
- * EditGunPage — Edit an existing weapon / hardware item.
- * Supports updating specs, steps, image replacement, and draft management.
+ * EditGunPage — Modify existing hardware with multiple images (FEATURE 1),
+ * specs, steps, and draft support.
  */
 export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
-  const targetId = gunId || gun?.id
+  const routeParams = useParams()
+  const navigate = useNavigate()
+  const targetId = gunId || gun?.id || routeParams?.id
+  const handleBack = onBack || (() => navigate(-1))
+  const handleSuccess = onSuccess || (() => navigate('/catalog'))
 
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(false)
@@ -37,18 +41,15 @@ export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
     name: '',
     type: 'Pistol',
     caliber: '9mm',
-    category: 'makanan',
-    difficulty: 'mudah',
+    category: 'Pistol',
     price: 599,
     description: '',
-    servings: 1,
+    status: 'published',
     is_featured: false,
   })
 
-  const [currentImageUrl, setCurrentImageUrl] = useState('')
-  const [imageFile, setImageFile] = useState(null)
-  const [imagePreview, setImagePreview] = useState(null)
-  const [uploading, setUploading] = useState(false)
+  // FEATURE 1: Multiple Images
+  const [images, setImages] = useState(['/guns/pistol.svg'])
 
   // Specs & Steps
   const [specs, setSpecs] = useState([{ name: '', quantity: '' }])
@@ -65,10 +66,9 @@ export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
         setLoading(true)
         setError('')
 
-        // If gun was passed directly and has full details, use it; else fetch from API
         let data = gun
-        if (!data || !data.ingredients || !data.steps) {
-          if (targetId && !String(targetId).startsWith('local-')) {
+        if (!data || !data.ingredients || !data.images) {
+          if (targetId) {
             const res = await gunService.getGunById(targetId)
             if (res.success && res.data) {
               data = res.data
@@ -79,16 +79,19 @@ export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
         if (data) {
           setFormData({
             name: data.name || '',
-            type: data.type || (data.category === 'makanan' ? 'Pistol' : 'Rifle'),
+            type: data.type || 'Pistol',
             caliber: data.caliber || '9mm',
-            category: data.category || 'makanan',
-            difficulty: data.difficulty || 'mudah',
+            category: data.category || 'Pistol',
             price: data.price ?? data.cook_time ?? 599,
             description: data.description || '',
-            servings: data.servings || 1,
+            status: data.status || 'published',
             is_featured: Boolean(data.is_featured),
           })
-          setCurrentImageUrl(data.image_url || data.image || '/guns/pistol.svg')
+
+          const loadedImages = Array.isArray(data.images) && data.images.length > 0
+            ? data.images
+            : [data.image_url || data.image || '/guns/pistol.svg']
+          setImages(loadedImages)
 
           if (data.ingredients && data.ingredients.length > 0) {
             setSpecs(data.ingredients.map((ing) => ({
@@ -107,12 +110,11 @@ export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
           } else {
             setSteps(['Standard manufacturer maintenance and cleaning protocol.'])
           }
-
         } else {
           setError('Hardware record could not be loaded.')
         }
       } catch (err) {
-        setError(err.message || 'Failed to load hardware record from server.')
+        setError(err.message || 'Failed to load hardware record.')
       } finally {
         setLoading(false)
       }
@@ -121,8 +123,7 @@ export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
     if (targetId) {
       fetchGun()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetId])
+  }, [targetId, gun])
 
   // Draft operations
   const handleLoadDraft = () => {
@@ -131,9 +132,7 @@ export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
       if (draft.formData) setFormData(draft.formData)
       if (draft.specs) setSpecs(draft.specs)
       if (draft.steps) setSteps(draft.steps)
-      if (draft.imagePreview) {
-        setImagePreview(draft.imagePreview)
-      }
+      if (draft.images) setImages(draft.images)
       setShowDraftModal(false)
       setSuccessMsg('Saved draft restored.')
       setTimeout(() => setSuccessMsg(''), 3000)
@@ -151,7 +150,7 @@ export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
       formData,
       specs,
       steps,
-      imagePreview: imagePreview || currentImageUrl,
+      images,
     }
     const saved = saveDraft(draftData, targetId)
     if (saved) {
@@ -159,49 +158,6 @@ export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
       setDraftTimestamp(ts)
       setSuccessMsg(`Draft saved (${formatDraftTime(ts)})`)
       setTimeout(() => setSuccessMsg(''), 3000)
-    }
-  }
-
-  // Handle new image file
-  const handleImageChange = (e) => {
-    const file = e.target.files[0]
-    if (!file) return
-
-    if (file.size > 5 * 1024 * 1024) {
-      setError('File size exceeds 5MB limit.')
-      return
-    }
-
-    const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
-    if (!allowed.includes(file.type)) {
-      setError('Allowed formats: .jpg, .jpeg, .png, .webp')
-      return
-    }
-
-    setImageFile(file)
-    setImagePreview(URL.createObjectURL(file))
-    setError('')
-  }
-
-  const handleUploadNewImage = async () => {
-    if (!imageFile) return
-    try {
-      setUploading(true)
-      const res = await uploadService.uploadImage(imageFile)
-      if (res.success && res.data?.url) {
-        setCurrentImageUrl(res.data.url)
-        setImageFile(null)
-        setImagePreview(null)
-        setSuccessMsg('New image uploaded successfully.')
-        setTimeout(() => setSuccessMsg(''), 3000)
-      }
-    } catch (err) {
-      console.warn('Image upload failed, using local blob:', err)
-      setCurrentImageUrl(imagePreview)
-      setImageFile(null)
-      setImagePreview(null)
-    } finally {
-      setUploading(false)
     }
   }
 
@@ -240,7 +196,12 @@ export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
     setError('')
 
     if (!formData.name.trim() || formData.name.trim().length < 3) {
-      setError('Product name must be at least 3 characters.')
+      setError('Product designation must be at least 3 characters.')
+      return
+    }
+
+    if (images.length === 0) {
+      setError('Please provide at least one image or vector.')
       return
     }
 
@@ -251,35 +212,21 @@ export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
         quantity: s.quantity.trim() || 'Standard',
       }))
 
-    if (cleanSpecs.length === 0) {
-      setError('Please provide at least one specification.')
-      return
-    }
-
-    const cleanSteps = steps
-      .filter((s) => s.trim())
-      .map((s) => s.trim())
-
-    if (cleanSteps.length === 0) {
-      setError('Please provide at least one maintenance step.')
-      return
-    }
+    const cleanSteps = steps.filter((s) => s.trim()).map((s) => s.trim())
 
     const payload = {
       name: formData.name.trim(),
-      type: formData.type || (formData.category === 'minuman' ? 'Rifle' : 'Pistol'),
-      caliber: formData.caliber || '9mm',
-      price: Number(formData.price) || 500,
-      category: formData.category || 'makanan',
-      description: formData.description.trim() || `${formData.type} caliber ${formData.caliber}.`,
-      image_url: imagePreview || currentImageUrl || '/guns/pistol.svg',
-      prep_time: 15,
-      cook_time: Number(formData.price) || 500,
-      servings: Number(formData.servings) || 1,
-      difficulty: formData.difficulty || 'mudah',
-      is_featured: Boolean(formData.is_featured),
+      type: formData.type || 'Pistol',
+      category: formData.type || 'Pistol',
+      caliber: formData.caliber.trim() || '9mm',
+      price: Number(formData.price) || 0,
+      description: formData.description.trim(),
+      images,
+      image_url: images[0] || '/guns/pistol.svg',
       ingredients: cleanSpecs,
       steps: cleanSteps,
+      status: formData.status || 'published',
+      is_featured: Boolean(formData.is_featured),
     }
 
     try {
@@ -287,13 +234,9 @@ export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
       const res = await gunService.updateGun(targetId, payload)
       if (res.success || res.data) {
         deleteDraft(targetId)
-        if (onSuccess) {
-          onSuccess(res.data)
-        } else if (onBack) {
-          onBack()
-        }
+        handleSuccess(res.data)
       } else {
-        throw new Error(res.message || 'Failed to update record on server.')
+        throw new Error(res.message || 'Failed to update record.')
       }
     } catch (err) {
       setError(err.message || 'Error occurred while updating record.')
@@ -313,9 +256,8 @@ export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
 
   return (
     <div className="form-page">
-      {/* Head */}
       <div className="form-head">
-        <button type="button" className="detail-back" onClick={onBack}>
+        <button type="button" className="detail-back" onClick={handleBack}>
           <ArrowLeft size={18} /> Back
         </button>
         <button
@@ -324,7 +266,7 @@ export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
           onClick={handleManualSaveDraft}
           title="Save draft"
         >
-          <Save size={14} /> Save Draft
+          <Save size={14} /> Quick Save
         </button>
       </div>
 
@@ -347,46 +289,8 @@ export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
       )}
 
       <form onSubmit={handleSubmit} className="entry-form">
-        {/* Imagery Section */}
-        <div className="card-box">
-          <h2 className="card-box-title">Visual Asset</h2>
-          <div className="edit-img-wrap">
-            <img
-              src={imagePreview || currentImageUrl}
-              alt="Current hardware"
-              className="edit-current-img"
-            />
-            <div className="edit-img-controls">
-              <input
-                id="edit-gun-image"
-                type="file"
-                accept="image/jpeg,image/jpg,image/png,image/webp"
-                onChange={handleImageChange}
-                className="hidden-file-input"
-              />
-              <label htmlFor="edit-gun-image" className="btn btn--outline btn--sm">
-                <Upload size={14} /> Select New Image File
-              </label>
-
-              {imageFile && (
-                <button
-                  type="button"
-                  className="btn btn--primary btn--sm"
-                  onClick={handleUploadNewImage}
-                  disabled={uploading}
-                >
-                  {uploading ? (
-                    <>
-                      <Loader size={14} className="spin" /> Uploading…
-                    </>
-                  ) : (
-                    'Upload to MinIO'
-                  )}
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
+        {/* FEATURE 1: Multi-Image Uploader */}
+        <MultiImageUploader images={images} onChange={setImages} />
 
         {/* Core fields */}
         <div className="form-grid">
@@ -407,19 +311,13 @@ export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
 
           <div className="form-group">
             <label htmlFor="edit-type" className="form-label">
-              Platform / Category <span className="req">*</span>
+              Platform Category <span className="req">*</span>
             </label>
             <select
               id="edit-type"
               name="type"
               value={formData.type}
-              onChange={(e) =>
-                setFormData((p) => ({
-                  ...p,
-                  type: e.target.value,
-                  category: e.target.value === 'Pistol' ? 'makanan' : 'minuman',
-                }))
-              }
+              onChange={(e) => setFormData((p) => ({ ...p, type: e.target.value }))}
               className="form-select"
             >
               <option value="Pistol">Pistol (Sidearm)</option>
@@ -463,26 +361,26 @@ export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
           </div>
 
           <div className="form-group">
-            <label htmlFor="edit-difficulty" className="form-label">
-              Grade / Build Quality <span className="req">*</span>
+            <label htmlFor="edit-status" className="form-label">
+              Catalog Status
             </label>
             <select
-              id="edit-difficulty"
-              name="difficulty"
-              value={formData.difficulty}
-              onChange={(e) => setFormData((p) => ({ ...p, difficulty: e.target.value }))}
+              id="edit-status"
+              name="status"
+              value={formData.status}
+              onChange={(e) => setFormData((p) => ({ ...p, status: e.target.value }))}
               className="form-select"
             >
-              <option value="mudah">Commercial / Standard</option>
-              <option value="sedang">Mil-Spec / Service Issue</option>
-              <option value="sulit">Match Grade / Custom</option>
+              <option value="published">Published (Public Catalog)</option>
+              <option value="draft">Draft (Work in Progress)</option>
+              <option value="archived">Archived (Stored in Archive)</option>
             </select>
           </div>
         </div>
 
         <div className="form-group">
           <label htmlFor="edit-desc" className="form-label">
-            Armory Description
+            Armory Notes &amp; Overview
           </label>
           <textarea
             id="edit-desc"
@@ -580,14 +478,12 @@ export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
 
         {/* Submit */}
         <div className="form-actions-bar">
-          <button type="button" className="btn btn--outline" onClick={onBack} disabled={updating}>
+          <button type="button" className="btn btn--outline" onClick={handleBack} disabled={updating}>
             Cancel
           </button>
           <button type="submit" className="btn btn--primary" disabled={updating}>
             {updating ? (
-              <>
-                <Loader size={18} className="spin" /> Updating Record…
-              </>
+              <><Loader size={18} className="spin" /> Updating Record…</>
             ) : (
               'Save Changes'
             )}

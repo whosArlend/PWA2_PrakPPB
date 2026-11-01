@@ -1,73 +1,158 @@
 import { useState } from 'react'
-import { ArrowLeft, Star, Send, Loader } from 'lucide-react'
+import {
+  ArrowLeft,
+  Star,
+  Share2,
+  ShoppingCart,
+  Check,
+  Archive,
+  Edit,
+  Trash2,
+} from 'lucide-react'
 import FavoriteButton from '../common/FavoriteButton'
-import { useReviews, useCreateReview } from '../../hooks/useReviews'
-import { getUserIdentifier } from '../../services/userService'
+import ImageGallery from './ImageGallery'
+import ProductReviews from './ProductReviews'
+import { useCart } from '../../context/CartContext'
 import { formatPrice, averageRating } from '../../utils/helpers'
+import { useReviews } from '../../hooks/useReviews'
 
 /**
- * Full-screen product detail view.
+ * Full-screen product detail view (FEATURES 1, 5, 8, 9)
  *
  * @param {Object}   props
  * @param {Object}   props.gun       — product data
  * @param {Function} props.onBack    — return to catalog
  * @param {Function} [props.onEdit]  — navigate to edit page
- * @param {Function} [props.onDelete]— trigger delete flow
+ * @param {Function} [props.onDelete]— trigger soft-delete / archive flow
  */
-export default function GunDetail({ gun, onBack, onEdit, onDelete }) {
-  const imgSrc = gun.image_url || gun.image || '/guns/pistol.svg'
-  const category = gun.type || gun.category || '—'
-  const caliber = gun.caliber || gun.difficulty || ''
+export default function GunDetail({ gun, onBack, onEdit, onDelete, onArchive }) {
+  const { addToCart } = useCart()
+  const { reviews } = useReviews(gun?.id)
+
+  const [shareFeedback, setShareFeedback] = useState('')
+  const [cartFeedback, setCartFeedback] = useState('')
+
+  if (!gun) {
+    return (
+      <div className="state-box">
+        <p>No hardware selected.</p>
+        <button type="button" className="btn btn--outline" onClick={onBack}>
+          <ArrowLeft size={16} /> Return to Armory Catalog
+        </button>
+      </div>
+    )
+  }
+
+  const category = gun.type || gun.category || 'Hardware'
+  const caliber = gun.caliber || ''
   const price = gun.price ?? gun.cook_time ?? 0
-
-  // Reviews
-  const { reviews, loading: reviewsLoading, refetch: refetchReviews } = useReviews(gun.id)
-  const { createReview, loading: submitting } = useCreateReview()
-  const [rating, setRating] = useState(5)
-  const [comment, setComment] = useState('')
-  const [reviewError, setReviewError] = useState('')
-  const [reviewSuccess, setReviewSuccess] = useState('')
-
   const avgRating = gun.average_rating || averageRating(reviews)
   const reviewCount = gun.review_count ?? reviews.length
 
-  const handleSubmitReview = async (e) => {
-    e.preventDefault()
-    setReviewError('')
-    setReviewSuccess('')
-
-    if (rating < 1 || rating > 5) {
-      setReviewError('Rating must be between 1 and 5.')
-      return
+  // FEATURE 5: Share Product Through a Unique Link
+  const handleShare = async () => {
+    const origin = window.location.origin
+    const shareUrl = `${origin}/product/${gun.id}`
+    const shareData = {
+      title: `${gun.name} — Bore & Barrel Armory`,
+      text: `${gun.name} (${category} · ${caliber}) listed at ${formatPrice(price)}. Explore full specs on Bore & Barrel.`,
+      url: shareUrl,
     }
 
-    const result = await createReview(gun.id, {
-      user_identifier: getUserIdentifier(),
-      rating,
-      comment: comment.trim(),
-    })
-
-    if (result) {
-      setReviewSuccess('Review submitted!')
-      setComment('')
-      setRating(5)
-      refetchReviews()
-    } else {
-      setReviewError('Could not submit review. The server may be unavailable.')
+    if (navigator.share && navigator.canShare && navigator.canShare(shareData)) {
+      try {
+        await navigator.share(shareData)
+        setShareFeedback('Shared successfully!')
+        setTimeout(() => setShareFeedback(''), 3000)
+        return
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          console.warn('Native share failed, using clipboard:', err)
+        } else {
+          return // User cancelled
+        }
+      }
     }
+
+    // Fallback: Clipboard API
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(shareUrl)
+        setShareFeedback('Unique link copied to clipboard!')
+      } else {
+        // Fallback for older browsers
+        const textarea = document.createElement('textarea')
+        textarea.value = shareUrl
+        document.body.appendChild(textarea)
+        textarea.select()
+        document.execCommand('copy')
+        document.body.removeChild(textarea)
+        setShareFeedback('Unique link copied to clipboard!')
+      }
+      setTimeout(() => setShareFeedback(''), 3000)
+    } catch {
+      setShareFeedback(`Link: ${shareUrl}`)
+      setTimeout(() => setShareFeedback(''), 5000)
+    }
+  }
+
+  // FEATURE 9: Add to Shopping Cart
+  const handleAddToCart = () => {
+    addToCart(gun, 1)
+    setCartFeedback(`Added ${gun.name} to order shortlist`)
+    setTimeout(() => setCartFeedback(''), 3000)
   }
 
   return (
     <div className="detail">
-      {/* Back button */}
-      <button type="button" className="detail-back" onClick={onBack}>
-        <ArrowLeft size={18} /> Back to Catalog
-      </button>
+      {/* Back button & Unique URL notification */}
+      <div className="detail-top-bar">
+        <button type="button" className="detail-back" onClick={onBack}>
+          <ArrowLeft size={18} /> Back to Catalog
+        </button>
 
-      {/* Hero */}
+        <div className="detail-top-actions">
+          {/* FEATURE 5: Share button */}
+          <button
+            type="button"
+            className="btn btn--outline btn--sm"
+            onClick={handleShare}
+            title="Share unique link to this weapon"
+          >
+            <Share2 size={15} /> Share Link
+          </button>
+        </div>
+      </div>
+
+      {shareFeedback && (
+        <div className="toast toast--success">
+          <Check size={18} /> {shareFeedback}
+        </div>
+      )}
+
+      {cartFeedback && (
+        <div className="toast toast--success">
+          <Check size={18} /> {cartFeedback}
+        </div>
+      )}
+
+      {/* Hero Section with Image Gallery (FEATURE 1) */}
       <div className="detail-hero">
-        <img className="detail-img" src={imgSrc} alt={gun.name} />
+        <div className="detail-hero-media">
+          <ImageGallery images={gun.images || [gun.image_url || gun.image]} alt={gun.name} />
+        </div>
+
         <div className="detail-info">
+          <div className="detail-status-row">
+            <span className="mono-badge">REF: {gun.id}</span>
+            {gun.status === 'archived' && (
+              <span className="badge badge--warning">ARCHIVED</span>
+            )}
+            {gun.status === 'draft' && (
+              <span className="badge badge--draft">DRAFT</span>
+            )}
+          </div>
+
           <h1 className="display">{gun.name}</h1>
           <p className="type">
             {category}
@@ -82,16 +167,51 @@ export default function GunDetail({ gun, onBack, onEdit, onDelete }) {
             </p>
           )}
 
+          {/* Action Row */}
           <div className="detail-actions">
+            {/* FEATURE 9: Add to Cart button */}
+            <button
+              type="button"
+              className="btn btn--primary"
+              onClick={handleAddToCart}
+              title="Add this piece to procurement order"
+            >
+              <ShoppingCart size={16} /> Add to Cart
+            </button>
+
             <FavoriteButton gunId={gun.id || gun.name} />
+
             {onEdit && (
-              <button type="button" className="btn btn--outline" onClick={() => onEdit(gun)}>
-                Edit
+              <button
+                type="button"
+                className="btn btn--outline"
+                onClick={() => onEdit(gun)}
+                title="Edit hardware record"
+              >
+                <Edit size={15} /> Edit
               </button>
             )}
+
+            {/* FEATURE 7: Archive / Delete */}
+            {onArchive && (
+              <button
+                type="button"
+                className="btn btn--outline"
+                onClick={() => onArchive(gun)}
+                title="Archive weapon from public view"
+              >
+                <Archive size={15} /> Archive
+              </button>
+            )}
+
             {onDelete && (
-              <button type="button" className="btn btn--danger" onClick={() => onDelete(gun)}>
-                Delete
+              <button
+                type="button"
+                className="btn btn--danger"
+                onClick={() => onDelete(gun)}
+                title="Remove hardware record"
+              >
+                <Trash2 size={15} /> Delete
               </button>
             )}
           </div>
@@ -100,14 +220,16 @@ export default function GunDetail({ gun, onBack, onEdit, onDelete }) {
 
       {/* Description */}
       <section className="detail-section">
-        <h2>Description</h2>
-        <p>{gun.description || 'No description available.'}</p>
+        <h2>Armory Specifications &amp; Overview</h2>
+        <p className="detail-desc-text">
+          {gun.description || 'No detailed mission description available for this piece.'}
+        </p>
       </section>
 
-      {/* Specifications (from ingredients / steps if present) */}
+      {/* Specifications */}
       {gun.ingredients && gun.ingredients.length > 0 && (
         <section className="detail-section">
-          <h2>Specifications</h2>
+          <h2>Technical Parameters</h2>
           <ul className="detail-specs">
             {gun.ingredients.map((ing, i) => (
               <li key={ing.id || i}>
@@ -118,101 +240,20 @@ export default function GunDetail({ gun, onBack, onEdit, onDelete }) {
         </section>
       )}
 
+      {/* Maintenance / Assembly Protocol */}
       {gun.steps && gun.steps.length > 0 && (
         <section className="detail-section">
-          <h2>Assembly / Maintenance Steps</h2>
+          <h2>Field Stripping &amp; Maintenance Protocol</h2>
           <ol className="detail-steps">
             {gun.steps.map((step, i) => (
-              <li key={step.id || i}>
-                {step.instruction || step}
-              </li>
+              <li key={step.id || i}>{step.instruction || step}</li>
             ))}
           </ol>
         </section>
       )}
 
-      {/* Reviews Section */}
-      <section className="detail-section">
-        <h2>Reviews</h2>
-
-        {/* Submit review */}
-        <form className="review-form" onSubmit={handleSubmitReview}>
-          <div className="review-stars">
-            {[1, 2, 3, 4, 5].map((n) => (
-              <button
-                key={n}
-                type="button"
-                className="star-btn"
-                onClick={() => setRating(n)}
-                aria-label={`${n} star${n > 1 ? 's' : ''}`}
-              >
-                <Star
-                  size={22}
-                  fill={n <= rating ? 'var(--brass)' : 'none'}
-                  stroke={n <= rating ? 'var(--brass)' : 'var(--steel)'}
-                />
-              </button>
-            ))}
-          </div>
-
-          <textarea
-            className="review-input"
-            rows="3"
-            placeholder="Write a short review (optional)…"
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            maxLength={500}
-          />
-
-          <button
-            type="submit"
-            className="btn btn--primary"
-            disabled={submitting || !gun.id}
-          >
-            {submitting ? (
-              <><Loader size={16} className="spin" /> Submitting…</>
-            ) : (
-              <><Send size={16} /> Submit Review</>
-            )}
-          </button>
-
-          {reviewError && <p className="form-error">{reviewError}</p>}
-          {reviewSuccess && <p className="form-success">{reviewSuccess}</p>}
-          {!gun.id && (
-            <p className="form-hint">
-              Reviews require a server-generated product ID. This product is local-only.
-            </p>
-          )}
-        </form>
-
-        {/* Existing reviews */}
-        {reviewsLoading ? (
-          <p className="detail-loading">Loading reviews…</p>
-        ) : reviews.length > 0 ? (
-          <ul className="review-list">
-            {reviews.map((rev) => (
-              <li key={rev.id} className="review-item">
-                <div className="review-head">
-                  <span className="review-user">{rev.user_identifier || 'Anonymous'}</span>
-                  <span className="review-stars-display">
-                    {Array.from({ length: 5 }, (_, i) => (
-                      <Star
-                        key={i}
-                        size={14}
-                        fill={i < rev.rating ? 'var(--brass)' : 'none'}
-                        stroke={i < rev.rating ? 'var(--brass)' : 'var(--line)'}
-                      />
-                    ))}
-                  </span>
-                </div>
-                {rev.comment && <p className="review-comment">{rev.comment}</p>}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="detail-empty">No reviews yet. Be the first!</p>
-        )}
-      </section>
+      {/* FEATURE 8: Reviews CRUD & Reactions */}
+      <ProductReviews gunId={gun.id} gunName={gun.name} />
     </div>
   )
 }

@@ -1,21 +1,27 @@
-import { Plus } from 'lucide-react'
+import { Plus, ShoppingCart, Heart, User, Layers } from 'lucide-react'
 import { useFavorites } from '../hooks/useFavorites'
+import { useCart } from '../context/CartContext'
 
 const NAV_ITEMS = [
-  { id: 'Catalog', label: 'Catalog' },
-  { id: 'Favorites', label: 'Favorites', hasBadge: true },
-  { id: 'Profile', label: 'Profile' },
-  { id: 'About', label: 'About' },
-  { id: 'Contact', label: 'Contact' },
+  { id: 'Catalog', label: 'Catalog', icon: Layers },
+  { id: 'Favorites', label: 'Favorites', icon: Heart, hasFavBadge: true },
+  { id: 'Cart', label: 'Cart', icon: ShoppingCart, hasCartBadge: true },
+  { id: 'Profile', label: 'Profile', icon: User },
 ]
 
-function Header({ tab, onTab, onNavigateCreate }) {
+export default function Header({ tab, onTab, onNavigateCreate }) {
   const { favorites } = useFavorites()
   const favCount = favorites ? favorites.length : 0
 
+  const { itemCount } = useCart()
+
   return (
     <header className="header">
-      <div className="header-brand-wrap" onClick={() => onTab('Catalog')} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px' }}>
+      <div
+        className="header-brand-wrap"
+        onClick={() => onTab('Catalog')}
+        style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px' }}
+      >
         <div className="header-logo-badge">
           <img src="/logo.png" alt="Bore & Barrel" />
         </div>
@@ -31,8 +37,15 @@ function Header({ tab, onTab, onNavigateCreate }) {
             onClick={() => onTab(item.id)}
           >
             {item.label}
-            {item.hasBadge && favCount > 0 && (
+
+            {/* Favorites Badge */}
+            {item.hasFavBadge && favCount > 0 && (
               <span className="nav-badge">{favCount}</span>
+            )}
+
+            {/* Cart Badge (FEATURE 9) */}
+            {item.hasCartBadge && itemCount > 0 && (
+              <span className="nav-badge nav-badge--cart">{itemCount}</span>
             )}
           </button>
         ))}
@@ -51,5 +64,3 @@ function Header({ tab, onTab, onNavigateCreate }) {
     </header>
   )
 }
-
-export default Header

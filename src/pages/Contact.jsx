@@ -1,12 +1,8 @@
-function Contact() {
-  return (
-    <div className="page">
-      <h1 className="display">Come by the shop.</h1>
-      <p className="lede">
-        123 Range Road. Open Tuesday to Saturday, 10 to 6. Call (555) 010-0100.
-      </p>
-    </div>
-  )
-}
+import { Navigate } from 'react-router-dom'
 
-export default Contact
+/**
+ * Contact content has been merged into the Operator Profile page (FEATURE 6).
+ */
+export default function Contact() {
+  return <Navigate to="/profile" replace />
+}

@@ -1,20 +1,36 @@
+import { ShoppingCart } from 'lucide-react'
 import FavoriteButton from '../common/FavoriteButton'
+import LazyImage from '../common/LazyImage'
+import { useCart } from '../../context/CartContext'
 import { formatPrice, truncate } from '../../utils/helpers'
 
 /**
- * Product card used in the catalog grid.
+ * Product card used in the catalog grid (FEATURES 1, 3, 9).
  *
  * @param {Object}   props
  * @param {Object}   props.gun       — product data
  * @param {Function} props.onSelect  — called with the gun when clicked
- * @param {Function} [props.onEdit]  — called when Edit is clicked (admin)
- * @param {Function} [props.onDelete]— called when Delete is clicked (admin)
+ * @param {Function} [props.onEdit]  — called when Edit is clicked
+ * @param {Function} [props.onDelete]— called when Delete/Archive is clicked
  */
 export default function GunCard({ gun, onSelect, onEdit, onDelete }) {
-  const imgSrc = gun.image_url || gun.image || '/guns/pistol.svg'
-  const category = gun.type || gun.category || '—'
-  const caliber = gun.caliber || gun.difficulty || ''
+  const { addToCart } = useCart()
+
+  // FEATURE 1: Primary image resolution
+  const primaryImg =
+    (gun.images && gun.images.length > 0 ? gun.images[0] : null) ||
+    gun.image_url ||
+    gun.image ||
+    '/guns/pistol.svg'
+
+  const category = gun.type || gun.category || 'Hardware'
+  const caliber = gun.caliber || ''
   const price = gun.price ?? gun.cook_time ?? 0
+
+  const handleQuickAdd = (e) => {
+    e.stopPropagation()
+    addToCart(gun, 1)
+  }
 
   return (
     <li className="card">
@@ -24,13 +40,14 @@ export default function GunCard({ gun, onSelect, onEdit, onDelete }) {
         onClick={() => onSelect(gun)}
         aria-label={`View ${gun.name}`}
       >
-        <img
-          className="card-img"
-          src={imgSrc}
+        {/* FEATURE 3: Lazy loading image with placeholder */}
+        <LazyImage
+          className="card-img-wrap"
+          src={primaryImg}
           alt={gun.name}
           width="240"
           height="180"
-          loading="lazy"
+          fallbackSrc="/guns/pistol.svg"
         />
 
         <span className="name display">{gun.name}</span>
@@ -44,7 +61,20 @@ export default function GunCard({ gun, onSelect, onEdit, onDelete }) {
           <span className="card-desc">{truncate(gun.description, 72)}</span>
         )}
 
-        <span className="price">{formatPrice(price)}</span>
+        <div className="card-bottom-row">
+          <span className="price">{formatPrice(price)}</span>
+
+          {/* FEATURE 9: Quick Add to Cart button */}
+          <button
+            type="button"
+            className="card-cart-btn"
+            onClick={handleQuickAdd}
+            title={`Add ${gun.name} to cart`}
+            aria-label={`Add ${gun.name} to cart`}
+          >
+            <ShoppingCart size={15} />
+          </button>
+        </div>
       </button>
 
       {/* Floating actions row */}
@@ -55,7 +85,10 @@ export default function GunCard({ gun, onSelect, onEdit, onDelete }) {
           <button
             type="button"
             className="card-act-btn"
-            onClick={(e) => { e.stopPropagation(); onEdit(gun) }}
+            onClick={(e) => {
+              e.stopPropagation()
+              onEdit(gun)
+            }}
             aria-label={`Edit ${gun.name}`}
             title="Edit"
           >
@@ -67,9 +100,12 @@ export default function GunCard({ gun, onSelect, onEdit, onDelete }) {
           <button
             type="button"
             className="card-act-btn card-act-btn--danger"
-            onClick={(e) => { e.stopPropagation(); onDelete(gun) }}
-            aria-label={`Delete ${gun.name}`}
-            title="Delete"
+            onClick={(e) => {
+              e.stopPropagation()
+              onDelete(gun)
+            }}
+            aria-label={`Archive or Delete ${gun.name}`}
+            title="Archive / Delete"
           >
             🗑️
           </button>

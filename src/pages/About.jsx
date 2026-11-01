@@ -1,13 +1,8 @@
-function About() {
-  return (
-    <div className="page">
-      <h1 className="display">A one-room armory.</h1>
-      <p className="lede">
-        Bore &amp; Barrel sells a short, honest list of firearms. Each piece is priced
-        from the bench — no markup theatre, no filler.
-      </p>
-    </div>
-  )
-}
+import { Navigate } from 'react-router-dom'
 
-export default About
+/**
+ * About content has been merged into the Operator Profile page (FEATURE 6).
+ */
+export default function About() {
+  return <Navigate to="/profile" replace />
+}
