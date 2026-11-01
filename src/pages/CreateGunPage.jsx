@@ -11,6 +11,7 @@ import {
   FileText,
 } from 'lucide-react'
 import gunService from '../services/gunService'
+import { useProductMutations } from '../hooks/useGuns'
 import MultiImageUploader from '../components/common/MultiImageUploader'
 import {
   saveDraft,
@@ -30,6 +31,7 @@ export default function CreateGunPage({ onBack, onSuccess }) {
   const navigate = useNavigate()
   const handleBack = onBack || (() => navigate(-1))
   const handleSuccess = onSuccess || (() => navigate('/catalog'))
+  const { createGun } = useProductMutations()
   const [formData, setFormData] = useState({
     name: '',
     type: 'Pistol',
@@ -188,7 +190,7 @@ export default function CreateGunPage({ onBack, onSuccess }) {
 
     try {
       setCreating(true)
-      const response = await gunService.createGun(payload)
+      const response = await createGun(payload)
       if (response.success || response.data) {
         deleteDraft('create')
         handleSuccess(response.data)

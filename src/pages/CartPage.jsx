@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { useCart } from '../context/CartContext'
 import { formatPrice } from '../utils/helpers'
+import LazyImage from '../components/common/LazyImage'
 
 /**
  * CartPage (FEATURE 9: Shopping Cart & WhatsApp Checkout)
@@ -82,13 +83,17 @@ export default function CartPage({ onNavigateCatalog, onSelectGun }) {
                 const lineTotal = (Number(item.price) || 0) * (Number(item.quantity) || 1)
                 return (
                   <li key={item.id} className="cart-item-row">
-                    <img
-                      src={item.image_url || '/guns/pistol.svg'}
-                      alt={item.name}
-                      className="cart-item-thumb"
+                    <div
                       onClick={() => onSelectGun && onSelectGun(item)}
                       style={{ cursor: onSelectGun ? 'pointer' : 'default' }}
-                    />
+                    >
+                      <LazyImage
+                        src={item.image_url || '/guns/pistol.svg'}
+                        alt={item.name}
+                        className="cart-item-thumb"
+                        fallbackSrc="/guns/pistol.svg"
+                      />
+                    </div>
 
                     <div className="cart-item-details">
                       <h3

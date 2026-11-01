@@ -23,6 +23,7 @@ import { useFavorites } from '../hooks/useFavorites'
 import { getAllDraftIds, loadDraft, deleteDraft, formatDraftTime } from '../utils/draftStorage'
 import ConfirmModal from '../components/modals/ConfirmModal'
 import { formatPrice } from '../utils/helpers'
+import LazyImage from '../components/common/LazyImage'
 
 /**
  * ProfilePage (FEATURES 6 & 7)
@@ -429,10 +430,11 @@ export default function ProfilePage({
             <ul className="drafts-list">
               {draftsList.map((d) => (
                 <li key={d.id} className="draft-card">
-                  <img
+                  <LazyImage
                     src={d.image_url || '/guns/pistol.svg'}
                     alt={d.name}
                     className="draft-thumb"
+                    fallbackSrc="/guns/pistol.svg"
                   />
                   <div className="draft-info">
                     <h3 className="display draft-title">{d.name}</h3>
@@ -507,10 +509,11 @@ export default function ProfilePage({
             <ul className="archived-list">
               {archivedList.map((gun) => (
                 <li key={gun.id} className="archived-card">
-                  <img
+                  <LazyImage
                     src={gun.image_url || '/guns/pistol.svg'}
                     alt={gun.name}
                     className="archived-thumb"
+                    fallbackSrc="/guns/pistol.svg"
                   />
                   <div className="archived-info">
                     <div className="archived-status-badge">ARCHIVED</div>

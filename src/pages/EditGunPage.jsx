@@ -10,6 +10,7 @@ import {
   AlertCircle,
 } from 'lucide-react'
 import gunService from '../services/gunService'
+import { useProductMutations } from '../hooks/useGuns'
 import MultiImageUploader from '../components/common/MultiImageUploader'
 import {
   saveDraft,
@@ -31,6 +32,7 @@ export default function EditGunPage({ gun, gunId, onBack, onSuccess }) {
   const targetId = gunId || gun?.id || routeParams?.id
   const handleBack = onBack || (() => navigate(-1))
   const handleSuccess = onSuccess || (() => navigate('/catalog'))
+  const { updateGun } = useProductMutations()
 
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(false)

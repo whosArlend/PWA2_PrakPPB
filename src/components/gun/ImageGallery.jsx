@@ -90,14 +90,11 @@ export default function ImageGallery({ images = [], alt = 'Hardware item' }) {
               className={`gallery-thumb-btn ${currentIndex === idx ? 'gallery-thumb-btn--active' : ''}`}
               onClick={() => setCurrentIndex(idx)}
             >
-              <img
+              <LazyImage
                 src={imgUrl}
                 alt={`Thumbnail ${idx + 1}`}
                 className="gallery-thumb-img"
-                loading="lazy"
-                onError={(e) => {
-                  e.currentTarget.src = '/guns/pistol.svg'
-                }}
+                fallbackSrc="/guns/pistol.svg"
               />
             </button>
           ))}
